@@ -116,6 +116,8 @@ def train(
 
             train_loss += batch_loss.item()  # acumulamos la perdida
 
+            print(f'Epoch: {epoch + 1:03d} | Batch Loss: {batch_loss:.5f} | Train Loss: {train_loss:.5f}')
+
         train_loss /= len(train_loader)  # calculamos la perdida promedio de la epoca
         epoch_train_errors.append(train_loss)  # guardamos la perdida de entrenamiento
         val_loss = evaluate(
