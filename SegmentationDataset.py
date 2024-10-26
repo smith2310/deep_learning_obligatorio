@@ -17,14 +17,16 @@ class SegmentacionDataset(Dataset):
             load_mask: bool,
             image_format: str = 'RGB',
             mask_format: str = 'L',
-            transform: Optional[Callable] = None
+            x_transform: Optional[Callable] = None,
+            y_transform: Optional[Callable] = None,
     ):
         super().__init__()
         self.root_dir = root_dir
         self.load_mask = load_mask
         self.image_format = image_format
         self.mask_format = mask_format
-        self.transform = transform
+        self.x_transform = x_transform
+        self.y_transform = y_transform
         self.image_names = os.listdir(root_dir/'images')
 
     def __len__(self):
@@ -40,9 +42,10 @@ class SegmentacionDataset(Dataset):
         else:
             mask = None
 
-        if self.transform:
-            image = self.transform(image)
-            if mask:
-                mask = self.transform(mask)
+        if self.x_transform:
+            image = self.x_transform(image)
+        
+        if self.y_transform:
+            mask = self.y_transform(mask)
 
         return image, mask

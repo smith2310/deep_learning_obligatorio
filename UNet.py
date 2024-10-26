@@ -31,6 +31,7 @@ class UNetNode(nn.Module):
         vertical_output = self.last_operation(x)
         if self.top_layer:
             vertical_output = torch.sigmoid(vertical_output)
+            # vertical_output = torch.round(vertical_output)
         # print(f'UNetNode 4: {vertical_output.shape=}')
         return (horizontal_output, vertical_output)
 
@@ -60,7 +61,7 @@ class UNetLayer(nn.Module):
             concatenated_output = torch.cat((previous_output, next_layer_output), dim=1)
             # print(f'UNetLayer 4: {concatenated_output.shape=}')
             _, output = self.right_node(concatenated_output)
-        print(f'UNetLayer 5: {output.shape=}, {type(output)=}')
+        # print(f'UNetLayer 5: {output.shape=}, {type(output)=}')
         return output
 
 class UNet(nn.Module):

@@ -43,7 +43,7 @@ class EarlyStopping:
         self.early_stop = False
 
     def __call__(self, val_loss):
-        if val_loss > self.best_score:
+        if val_loss >= self.best_score:
             self.counter += 1
             if self.counter >= self.patience:
                 self.early_stop = True
@@ -115,8 +115,6 @@ def train(
             optimizer.step()  # actualizamos los pesos
 
             train_loss += batch_loss.item()  # acumulamos la perdida
-
-            print(f'Epoch: {epoch + 1:03d} | Batch Loss: {batch_loss:.5f} | Train Loss: {train_loss:.5f}')
 
         train_loss /= len(train_loader)  # calculamos la perdida promedio de la epoca
         epoch_train_errors.append(train_loss)  # guardamos la perdida de entrenamiento
