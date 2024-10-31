@@ -10,7 +10,9 @@ class UNetNode(nn.Module):
     def __init__(self, in_channels, out_channels, last_operation, top_layer=False):
         super(UNetNode, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.batchNorm1 = nn.BatchNorm2d(out_channels)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+        self.batchNorm2 = nn.BatchNorm2d(out_channels)
         self.last_operation = last_operation
         self.top_layer = top_layer
 
@@ -24,14 +26,15 @@ class UNetNode(nn.Module):
         """
         # print(f'UNetNode 1: {x.shape=}')
         x = F.relu(self.conv1(x))
+        x = self.batchNorm1(x)
         # print(f'UNetNode 2: {x.shape=}')
         x = F.relu(self.conv2(x))
+        x = self.batchNorm2(x)
         horizontal_output = x
         # print(f'UNetNode 3: {layer_output.shape=}')
         vertical_output = self.last_operation(x)
         if self.top_layer:
             vertical_output = torch.sigmoid(vertical_output)
-            # vertical_output = torch.round(vertical_output)
         # print(f'UNetNode 4: {vertical_output.shape=}')
         return (horizontal_output, vertical_output)
 
