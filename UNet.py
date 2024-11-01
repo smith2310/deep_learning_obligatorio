@@ -25,11 +25,13 @@ class UNetNode(nn.Module):
             a {previous_last_output}
         """
         # print(f'UNetNode 1: {x.shape=}')
-        x = F.relu(self.conv1(x))
+        x = self.conv1(x)
         x = self.batchNorm1(x)
+        x = F.relu(x)
         # print(f'UNetNode 2: {x.shape=}')
-        x = F.relu(self.conv2(x))
+        x = self.conv2(x)
         x = self.batchNorm2(x)
+        x = F.relu(x)
         horizontal_output = x
         # print(f'UNetNode 3: {layer_output.shape=}')
         vertical_output = self.last_operation(x)

@@ -57,6 +57,8 @@ def print_log(epoch, train_loss, val_loss):
         f"Epoch: {epoch + 1:03d} | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f}"
     )
 
+import copy
+
 def train(
     model,
     optimizer,
@@ -89,46 +91,46 @@ def train(
         Tuple[List[float], List[float]]: Una tupla con dos listas, la primera con el error de entrenamiento de cada época y la segunda con el error de validación de cada época.
 
     """
-    epoch_train_errors = []  # colectamos el error de traing para posterior analisis
-    epoch_val_errors = []  # colectamos el error de validacion para posterior analisis
+    epoch_train_errors = []
+    epoch_val_errors = []
+    best_val_loss = float('inf')
+    best_model_weights = None
+
     if do_early_stopping:
-        early_stopping = EarlyStopping(
-            patience=patience
-        )  # instanciamos el early stopping
+        early_stopping = EarlyStopping(patience=patience)
 
-    for epoch in range(epochs):  # loop de entrenamiento
+    for epoch in range(epochs):
         model.to(device)
-        model.train()  # ponemos el modelo en modo de entrenamiento
-        train_loss = 0  # acumulador de la perdida de entrenamiento
+        model.train()
+        train_loss = 0
         for x, y in train_loader:
-            x = x.to(device)  # movemos los datos al dispositivo
-            y = y.to(device)  # movemos los datos al dispositivo
+            x = x.to(device)
+            y = y.to(device)
 
-            optimizer.zero_grad()  # reseteamos los gradientes
+            optimizer.zero_grad()
+            output = model(x)
+            batch_loss = criterion(output, y)
+            batch_loss.backward()
+            optimizer.step()
 
-            output = model(x)  # forward pass (prediccion)
-            batch_loss = criterion(
-                output, y
-            )  # calculamos la perdida con la salida esperada
+            train_loss += batch_loss.item()
 
-            batch_loss.backward()  # backpropagation
-            optimizer.step()  # actualizamos los pesos
+        train_loss /= len(train_loader)
+        epoch_train_errors.append(train_loss)
+        val_loss = evaluate(model, criterion, val_loader, device)
+        epoch_val_errors.append(val_loss)
 
-            train_loss += batch_loss.item()  # acumulamos la perdida
-
-        train_loss /= len(train_loader)  # calculamos la perdida promedio de la epoca
-        epoch_train_errors.append(train_loss)  # guardamos la perdida de entrenamiento
-        val_loss = evaluate(
-            model, criterion, val_loader, device
-        )  # evaluamos el modelo en el conjunto de validacion
-        epoch_val_errors.append(val_loss)  # guardamos la perdida de validacion
+        # Guardar los pesos del mejor modelo basado en la pérdida de validación
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_model_weights = copy.deepcopy(model.state_dict())
 
         if do_early_stopping:
-            early_stopping(val_loss)  # llamamos al early stopping
+            early_stopping(val_loss)
 
-        if log_fn is not None:  # si se pasa una funcion de log
-            if (epoch + 1) % log_every == 0:  # loggeamos cada log_every epocas
-                log_fn(epoch, train_loss, val_loss)  # llamamos a la funcion de log
+        if log_fn is not None:
+            if (epoch + 1) % log_every == 0:
+                log_fn(epoch, train_loss, val_loss)
 
         if do_early_stopping and early_stopping.early_stop:
             print(
@@ -136,7 +138,12 @@ def train(
             )
             break
 
+    # Cargar los mejores pesos al modelo al final del entrenamiento
+    if best_model_weights is not None:
+        model.load_state_dict(best_model_weights)
+
     return epoch_train_errors, epoch_val_errors
+
 
 
 def plot_taining(train_errors, val_errors):
@@ -226,3 +233,52 @@ def show_tensor_images(tensors, titles=None, figsize=(15, 5), vmin=None, vmax=No
             ax.set_title(titles[i])
         ax.axis("off")
     plt.show()
+
+def calculate_mean_and_std(dataset, cache_file_name = 'images_data_estimation.txt'):
+    """
+    Calcula la media y la desviación estándar de un conjunto de datos.
+
+    Args:
+        dataset (torch.utils.data.Dataset): Conjunto de datos.
+        cache_file_name (str): Nombre del archivo donde se guardarán los valores de media y desviación estándar,
+        y si el archivo existe en lugar de calcular los valores se leerán del archivo.
+
+    Returns:
+        Tuple[Tuple[float, float, float], Tuple[float, float, float]]: Media y desviación estándar de los datos.
+    """
+    # Leer el archivo si ya se ha calculado previamente
+    try:
+        with open(cache_file_name, 'r') as file:
+            line = file.readline()
+            mean = tuple(map(float, line.split(',')))
+            line = file.readline()
+            std = tuple(map(float, line.split(',')))
+            print('Valor de la media y desviación estándar leídos del archivo')
+            return mean, std
+    except FileNotFoundError:
+        mean = None
+        std = None
+
+    # Calcular la media y la desviación estándar
+    mean = torch.zeros(3)
+    std = torch.zeros(3)
+    for image, _ in dataset:
+        mean += torch.mean(image, dim=[1, 2])
+        std += torch.std(image, dim=[1, 2])
+
+    mean /= len(dataset)
+    std /= len(dataset)
+
+    mean = tuple(mean.tolist())
+    std = tuple(std.tolist())
+
+    # Guardar los valores en el archivo
+    try:
+        with open(cache_file_name, 'w') as file:
+            file.write(",".join(map(str, mean)))
+            file.write("\n")
+            file.write(",".join(map(str, std)))
+    except FileNotFoundError:
+        pass
+
+    return mean, std
