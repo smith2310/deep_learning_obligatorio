@@ -2,125 +2,60 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class UNetNode(nn.Module):
-    """
-    Una instancia de UNetNode representa de forma genérica cualquier nodo de la arquitectura U-Net,
-    ya sea el lado izquierdo, el derecho o la base.
-    """
-    def __init__(self, in_channels, out_channels, last_operation, top_layer=False):
-        super(UNetNode, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.batchNorm1 = nn.BatchNorm2d(out_channels)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
-        self.batchNorm2 = nn.BatchNorm2d(out_channels)
-        self.last_operation = last_operation
-        self.top_layer = top_layer
-
-    def forward(self, x):
-        """
-        Calcula el forward del nodo
-        Returns:
-            Tuple: (previous_output, output), donde {previous_output} es la salida de las 2 primeras
-            convoluciones antes de aplicar {last_operation} y output es el resultado de aplicar {last_operation}
-            a {previous_last_output}
-        """
-        # print(f'UNetNode 1: {x.shape=}')
-        x = self.conv1(x)
-        x = self.batchNorm1(x)
-        x = F.relu(x)
-        # print(f'UNetNode 2: {x.shape=}')
-        x = self.conv2(x)
-        x = self.batchNorm2(x)
-        x = F.relu(x)
-        horizontal_output = x
-        # print(f'UNetNode 3: {layer_output.shape=}')
-        vertical_output = self.last_operation(x)
-        if self.top_layer:
-            vertical_output = torch.sigmoid(vertical_output)
-        # print(f'UNetNode 4: {vertical_output.shape=}')
-        return (horizontal_output, vertical_output)
-
-class UNetLayer(nn.Module):
-    """
-    Una instancia de UNetLayer representa una layer de la arquitectura U-Net, desde la que se encuentra como
-    entrada más arriba hasta la que se tiene en la base.
-    """
-    def __init__(self, left_node, right_node, next_layer):
-        super(UNetLayer, self).__init__()
-        self.left_node = left_node
-        self.right_node = right_node
-        self.next_layer = next_layer #Representa la layer de más abajo, en caso de ser la base será None
-
-    def forward(self, x):
-        """
-        Calcula el forward para el layer, llamando al layer siguiente y eventualmente
-        concatenando el resultado del {left_node} con el resultado del {next_layer}
-        """
-        # print(f'UNetLayer 1: {x.shape=}')
-        previous_output, output = self.left_node(x)
-        # print(f'UNetLayer 2: {previous_output.shape=}, {output.shape=}')
-        if self.next_layer:
-            #Asumimos que los tamaños de los tensores van a ser los mismos del left y next_layer
-            next_layer_output = self.next_layer(output)
-            # print(f'UNetLayer 3: {next_layer_output.shape=}')
-            concatenated_output = torch.cat((previous_output, next_layer_output), dim=1)
-            # print(f'UNetLayer 4: {concatenated_output.shape=}')
-            _, output = self.right_node(concatenated_output)
-        # print(f'UNetLayer 5: {output.shape=}, {type(output)=}')
-        return output
 
 class UNet(nn.Module):
-    """
-    Una instancia de UNet representa todo el modelo con las diferentes layers, donde la primera y más "de arriba" es la entrada
-    y la salida. El constructor recibe como parametro los canales de una lista de enteros con los in_channels de todas las layers,
-    donde el primero representa el in_channels de la entrada al modelo, el segundo es el in_channels del top_layer, luego el 
-    in_channels, de la siguiente layer, hasta que el último representa la cantidad de in_channels de la base de la U-Net.
-    """
-    def __init__(self, input_channel, out_channel, layer_channels):
+    
+    def __init__(self, input_channel, out_channel, starting_channel=64):
         super(UNet, self).__init__()
-        #Construimos las layers de abajo hacia arriba
-        bottom_top_layers = list(reversed(layer_channels))
-        layers_pairs = [(bottom_top_layers[i], bottom_top_layers[i+1]) for i in range(len(bottom_top_layers)-1)] + [(bottom_top_layers[-1], bottom_top_layers[-1])]
-        # Esto convierte [64, 128, 256, 512, 1024] a [(1024,512), (512,256), (256, 128), (128, 64), (64, 64)]
-        print(f'{layers_pairs=}')
-
-        layer_counter = 0
-        previous_layer = None
-        for (current_channels, previous_channels) in layers_pairs:
-            if layer_counter == 0: #Estamos en la base de la U-Net
-                left_node = UNetNode(
-                    in_channels = previous_channels,
-                    out_channels = current_channels,
-                    last_operation = nn.ConvTranspose2d(current_channels, previous_channels, kernel_size=2, stride=2)
-                )
-                right_node = None
-            elif layer_counter == len(layers_pairs) - 1: #Estamos en la top layer
-                left_node = UNetNode(
-                    in_channels = input_channel,
-                    out_channels = current_channels,
-                    last_operation = nn.MaxPool2d(kernel_size=2, stride=2)
-                )
-                right_node = UNetNode(
-                    in_channels = current_channels*2,
-                    out_channels = current_channels,
-                    last_operation = nn.Conv2d(current_channels, out_channel, kernel_size=1),
-                    top_layer = True
-                )
-            else:
-                left_node = UNetNode(
-                    in_channels = previous_channels, 
-                    out_channels = current_channels, 
-                    last_operation = nn.MaxPool2d(kernel_size=2, stride=2)
-                )
-                right_node = UNetNode(
-                    in_channels = current_channels*2,
-                    out_channels = current_channels,
-                    last_operation = nn.ConvTranspose2d(current_channels, previous_channels, kernel_size=2, stride=2)
-                )
-            previous_layer = UNetLayer(left_node, right_node, previous_layer)
-            layer_counter += 1
-        self.top_layer = previous_layer
+        self.enc1 = self.conv_block(input_channel, starting_channel)
+        self.pool1 = nn.MaxPool2d(2)
+        self.enc2 = self.conv_block(starting_channel, starting_channel*2)
+        self.pool2 = nn.MaxPool2d(2)
+        self.enc3 = self.conv_block(starting_channel*2, starting_channel*4)
+        self.pool3 = nn.MaxPool2d(2)
+        self.enc4 = self.conv_block(starting_channel*4, starting_channel*8)
+        self.pool4 = nn.MaxPool2d(2)
+        self.base = self.conv_block(starting_channel*8, starting_channel*16)
+        self.up4 = nn.ConvTranspose2d(starting_channel*16, starting_channel*8, 2, stride=2)
+        self.dec4 = self.conv_block(starting_channel*16, starting_channel*8)
+        self.up3 = nn.ConvTranspose2d(starting_channel*8, starting_channel*4, 2, stride=2)
+        self.dec3 = self.conv_block(starting_channel*8, starting_channel*4)
+        self.up2 = nn.ConvTranspose2d(starting_channel*4, starting_channel*2, 2, stride=2)
+        self.dec2 = self.conv_block(starting_channel*4, starting_channel*2)
+        self.up1 = nn.ConvTranspose2d(starting_channel*2, starting_channel, 2, stride=2)
+        self.dec1 = self.conv_block(starting_channel*2, starting_channel)
+        self.output = nn.Conv2d(starting_channel, out_channel, 1)
+        self.output_activation = nn.Sigmoid()
         
 
+        
+    def conv_block(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
     def forward(self, x):
-        return self.top_layer(x)
+        enc1 = self.enc1(x)
+        pool1 = self.pool1(enc1)
+        enc2 = self.enc2(pool1)
+        pool2 = self.pool2(enc2)
+        enc3 = self.enc3(pool2)
+        pool3 = self.pool3(enc3)
+        enc4 = self.enc4(pool3)
+        pool4 = self.pool4(enc4)
+        base = self.base(pool4)
+        up4 = self.up4(base)
+        dec4 = self.dec4(torch.cat([up4, enc4], 1))
+        up3 = self.up3(dec4)
+        dec3 = self.dec3(torch.cat([up3, enc3], 1))
+        up2 = self.up2(dec3)
+        dec2 = self.dec2(torch.cat([up2, enc2], 1))
+        up1 = self.up1(dec2)
+        dec1 = self.dec1(torch.cat([up1, enc1], 1))
+        output = self.output(dec1)
+        return self.output_activation(output)
