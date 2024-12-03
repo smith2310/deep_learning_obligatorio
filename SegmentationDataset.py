@@ -1,8 +1,7 @@
 import os
 from pathlib import Path
 from PIL import Image
-import torchvision.datasets as datasets
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from torchvision.transforms import v2 as T 
 from typing import Callable, Optional
 
@@ -33,19 +32,21 @@ class SegmentacionDataset(Dataset):
         return len(self.image_names)
     
     def __getitem__(self, index):
-        image_name = self.image_names[index]
+        image_name = self.get_name(index)
         image_path = self.root_dir / 'images' / image_name
         image = Image.open(image_path).convert(self.image_format)
-        if self.load_mask:
-            mask_path = self.root_dir / 'masks' / image_name
-            mask = Image.open(mask_path).convert(self.mask_format)
-        else:
-            mask = None
 
         if self.x_transform:
             image = self.x_transform(image)
+            
+        if self.load_mask:
+            mask_path = self.root_dir / 'masks' / image_name
+            mask = Image.open(mask_path).convert(self.mask_format)
+            if self.y_transform:
+                mask = self.y_transform(mask)
+            return image, mask
+        else:
+            return image
         
-        if self.y_transform:
-            mask = self.y_transform(mask)
-
-        return image, mask
+    def get_name(self, index):
+        return self.image_names[index]

@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from sklearn.metrics import (
@@ -282,3 +283,10 @@ def calculate_mean_and_std(dataset, cache_file_name = 'images_data_estimation.tx
         pass
 
     return mean, std
+
+def rle_encode(mask):
+    pixels = np.array(mask).flatten(order='F')  # Aplanar la máscara en orden Fortran
+    pixels = np.concatenate([[0], pixels, [0]])  # Añadir ceros al principio y final
+    runs = np.where(pixels[1:] != pixels[:-1])[0] + 1  # Encontrar transiciones
+    runs[1::2] = runs[1::2] - runs[::2]  # Calcular longitudes
+    return ' '.join(str(x) for x in runs)
