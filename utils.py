@@ -42,13 +42,17 @@ class EarlyStopping:
         self.best_score = float("inf")
         self.val_loss_min = float("inf")
         self.early_stop = False
+        self.best_epoch = 0
+        self.epoch_counter = 0
 
     def __call__(self, val_loss):
+        self.epoch_counter += 1
         if val_loss >= self.best_score:
             self.counter += 1
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
+            self.best_epoch = self.epoch_counter
             self.best_score = val_loss
             self.counter = 0
 
@@ -67,7 +71,6 @@ def train(
     train_loader,
     val_loader,
     device,
-    do_early_stopping=True,
     patience=5,
     epochs=10,
     log_fn=print_log,
@@ -89,7 +92,8 @@ def train(
         log_every (int): Número de épocas entre cada llamada a log_fn (default: 1).
 
     Returns:
-        Tuple[List[float], List[float]]: Una tupla con dos listas, la primera con el error de entrenamiento de cada época y la segunda con el error de validación de cada época.
+        Tuple[List[float], List[float], Int]: Una tupla con dos listas y un numero, la primera lista con el error de entrenamiento de cada época 
+        y la segunda lista con el error de validación de cada época y el número de épocas que se ejecutaron.
 
     """
     epoch_train_errors = []
@@ -97,10 +101,12 @@ def train(
     best_val_loss = float('inf')
     best_model_weights = None
 
-    if do_early_stopping:
-        early_stopping = EarlyStopping(patience=patience)
+    early_stopping = EarlyStopping(patience=patience)
+
+    epochs_counter = 0
 
     for epoch in range(epochs):
+        epochs_counter += 1
         model.to(device)
         model.train()
         train_loss = 0
@@ -126,16 +132,16 @@ def train(
             best_val_loss = val_loss
             best_model_weights = copy.deepcopy(model.state_dict())
 
-        if do_early_stopping:
-            early_stopping(val_loss)
+        early_stopping(val_loss)
+            
 
         if log_fn is not None:
             if (epoch + 1) % log_every == 0:
                 log_fn(epoch, train_loss, val_loss)
 
-        if do_early_stopping and early_stopping.early_stop:
+        if early_stopping.early_stop:
             print(
-                f"Detener entrenamiento en la época {epoch}, la mejor pérdida fue {early_stopping.best_score:.5f}"
+                f"Detener entrenamiento en la época {epoch}, la mejor pérdida fue {early_stopping.best_score:.5f} en la época {early_stopping.best_epoch}"
             )
             break
 
@@ -143,7 +149,51 @@ def train(
     if best_model_weights is not None:
         model.load_state_dict(best_model_weights)
 
-    return epoch_train_errors, epoch_val_errors
+    return epoch_train_errors, epoch_val_errors, early_stopping.best_epoch
+
+
+def final_train(
+    model,
+    optimizer,
+    criterion,
+    train_loader,
+    device,
+    epochs,
+    log_fn=None,  # función de logging opcional
+    log_every=1,    
+):
+    """
+    Entrena el modelo utilizando el optimizador y la función de pérdida proporcionados.
+
+    Args:
+        model (torch.nn.Module): El modelo que se va a entrenar.
+        optimizer (torch.optim.Optimizer): El optimizador que se utilizará para actualizar los pesos del modelo.
+        criterion (torch.nn.Module): La función de pérdida que se utilizará para calcular la pérdida.
+        train_loader (torch.utils.data.DataLoader): DataLoader que proporciona TODOS los datos de entrenamiento
+        device (str): El dispositivo donde se ejecutará el entrenamiento.
+        epochs (int): Número de épocas de entrenamiento en total a correr.
+        log_fn (function): Función que se llamará después de cada log_every épocas con los argumentos (epoch, train_loss) (default: None).
+        log_every (int): Número de épocas entre cada llamada a log_fn (default: 1).
+    """
+    model.train()  # ponemos el modelo en modo de entrenamiento
+    for epoch in range(epochs):
+        model.to(device)
+        train_loss = 0
+        for x, y in train_loader:
+            x = x.to(device)
+            y = y.to(device)
+            optimizer.zero_grad()
+            output = model(x)
+            batch_loss = criterion(output, y)
+            batch_loss.backward()
+            optimizer.step()
+            train_loss += batch_loss.item()
+        train_loss /= len(train_loader)
+        if log_fn and epoch % log_every == 0:
+            log_fn(epoch, train_loss)
+
+        if epoch % log_every == 0:
+            print(f"Epoch [{epoch+1}/{epochs}], Loss: {train_loss:.4f}")
 
 
 
@@ -160,34 +210,50 @@ def plot_taining(train_errors, val_errors):
     plt.show()  # Muestra el gráfico
 
 
-def model_classification_report(model, dataloader, device, nclasses):
+def segmentation_classification_report(model, dataloader, device):
     """
-    Returns:
-        (accuracy, f1_score, precision, recall) promedio
-    """
-    # Evaluación del modelo
-    model.eval()
+    Genera un reporte de clasificación para tareas de segmentación.
+    
+    Args:
+        model: Modelo UNet.
+        dataloader: DataLoader con datos de prueba.
+        device: Dispositivo (CPU/GPU).
 
+    Returns:
+        Diccionario con métricas promedio (accuracy, f1-score, precision, recall).
+    """
+    model.eval()
     all_preds = []
     all_labels = []
 
     with torch.no_grad():
         for inputs, labels in dataloader:
             inputs = inputs.to(device)
+            labels = labels.to(device)  # Asegúrate de que las etiquetas también estén en el dispositivo
             outputs = model(inputs)
-            preds = torch.argmax(outputs, dim=1)
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.numpy())
+            
+            # Binarizar las salidas con un umbral de 0.5
+            preds = (outputs > 0.5).int()
+            
+            # Aplanar las predicciones y etiquetas para usar sklearn
+            all_preds.extend(preds.cpu().numpy().ravel())
+            all_labels.extend(labels.cpu().numpy().ravel())
+
+    # Convertir a arrays de numpy
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
 
     # Reporte de clasificación
     report = classification_report(
         all_labels,
         all_preds,
-        target_names=[str(i) for i in range(nclasses)],
+        target_names=["Clase 0", "Clase 1"],
         output_dict=True
     )
+    
+    # Extraer métricas promedio
     averages = report['weighted avg']
-    return (report['accuracy'], averages['f1-score'], averages['precision'], averages['recall'])
+    return report['accuracy'], averages['f1-score'], averages['precision'], averages['recall']
 
 
 def show_tensor_image(tensor, title=None, vmin=None, vmax=None):

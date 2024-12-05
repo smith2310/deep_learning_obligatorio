@@ -1,35 +1,30 @@
+import torch
 import torch.nn as nn
 
 class DiceLoss(nn.Module):
-    def __init__(self, smooth: float = 1.0):
-        """
-        Inicializa la función de pérdida Dice.
-
-        Args:
-            smooth (float): Parámetro para evitar divisiones por cero. Se le suma tanto al numerador
-                            como al denominador para estabilizar el cálculo.
-        """
+    def __init__(self, epsilon=1e-6):
         super(DiceLoss, self).__init__()
-        self.smooth = smooth
+        self.epsilon = epsilon
 
     def forward(self, preds, targets):
         """
-        Calcula la Dice Loss entre las predicciones y los objetivos.
-
         Args:
-            preds (torch.Tensor): Tensor con las predicciones del modelo. De forma típica en el rango [0, 1] tras aplicar sigmoid.
-            targets (torch.Tensor): Tensor con las etiquetas reales (máscara binaria) en el mismo rango y dimensiones.
+            preds: Tensores de predicciones (probabilidades, rango [0, 1]) de forma (batch_size, ..., H, W).
+            targets: Tensores de etiquetas reales (binarios, valores 0 o 1) de forma (batch_size, ..., H, W).
 
         Returns:
-            torch.Tensor: El valor de la Dice Loss calculada.
+            Dice Loss.
         """
-        # Aplanar los tensores para calcular el índice de Dice en todo el batch
-        preds = preds.view(-1)
-        targets = targets.view(-1)
+        # Aplanar tensores a una sola dimensión
+        preds = preds.contiguous().view(preds.size(0), -1)
+        targets = targets.contiguous().view(targets.size(0), -1)
+        
+        intersection = (preds * targets).sum(dim=1)
+        preds_sum = preds.sum(dim=1)
+        targets_sum = targets.sum(dim=1)
 
-        # Cálculo del índice de Dice
-        intersection = (preds * targets).sum()
-        dice_coef = (2. * intersection + self.smooth) / (preds.sum() + targets.sum() + self.smooth)
+        # Calcular Dice Coefficient
+        dice_coeff = (2.0 * intersection + self.epsilon) / (preds_sum + targets_sum + self.epsilon)
+        dice_loss = 1 - dice_coeff.mean()
 
-        # Calcula la Dice Loss
-        return 1 - dice_coef
+        return dice_loss
