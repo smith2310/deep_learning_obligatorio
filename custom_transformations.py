@@ -75,7 +75,6 @@ class ElasticTransform:
         """
         Suaviza los desplazamientos utilizando un filtro Gaussiano.
         """
-        # Crear un mapa vacío para los desplazamientos suavizados
         displacement_map = np.zeros((size[0], size[1], 2), dtype=np.float32)
 
         # Calcular los pasos de la cuadrícula

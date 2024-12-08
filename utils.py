@@ -1,9 +1,10 @@
+import os
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from PIL import Image
 from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
+    classification_report
 )
 
 
@@ -301,12 +302,12 @@ def show_tensor_images(tensors, titles=None, figsize=(15, 5), vmin=None, vmax=No
         ax.axis("off")
     plt.show()
 
-def calculate_mean_and_std(dataset, cache_file_name = 'images_data_estimation.txt'):
+def calculate_mean_and_std(folder_path, cache_file_name = 'images_data_estimation.txt'):
     """
     Calcula la media y la desviación estándar de un conjunto de datos.
 
     Args:
-        dataset (torch.utils.data.Dataset): Conjunto de datos.
+        folder_path (String): Ruta de la carpeta que contiene las imágenes.
         cache_file_name (str): Nombre del archivo donde se guardarán los valores de media y desviación estándar,
         y si el archivo existe en lugar de calcular los valores se leerán del archivo.
 
@@ -326,15 +327,30 @@ def calculate_mean_and_std(dataset, cache_file_name = 'images_data_estimation.tx
         mean = None
         std = None
 
-    # Calcular la media y la desviación estándar
+    if not os.path.isdir(folder_path):
+        raise ValueError(f"La ruta especificada '{folder_path}' no es una carpeta válida.")
+
+    # Acumuladores para la suma y suma de cuadrados
     mean = torch.zeros(3)
     std = torch.zeros(3)
-    for image, _ in dataset:
-        mean += torch.mean(image, dim=[1, 2])
-        std += torch.std(image, dim=[1, 2])
+    num_pixels = 0
 
-    mean /= len(dataset)
-    std /= len(dataset)
+    # Iterar sobre todas las imágenes en la carpeta
+    for filename in os.listdir(folder_path):
+        image_path = os.path.join(folder_path, filename)
+        with Image.open(image_path).convert('RGB') as img:
+            image_tensor = torch.tensor(np.array(img) / 255.0).permute(2, 0, 1) # Normalizar los valores de píxeles
+
+        # Sumar las medias por canal
+        mean += torch.mean(image_tensor, dim=[1, 2])
+        # Sumar las desviaciones estándar por canal
+        std += torch.std(image_tensor, dim=[1, 2])
+        # Actualizar el número de píxeles
+        num_pixels += image_tensor.shape[1] * image_tensor.shape[2]
+
+    # Promediar las medias y desviaciones estándar acumuladas
+    mean /= len(os.listdir(folder_path))
+    std /= len(os.listdir(folder_path))
 
     mean = tuple(mean.tolist())
     std = tuple(std.tolist())
